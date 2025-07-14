@@ -72,6 +72,8 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.SewerLevel;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.secret.SecretRoom;
 import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.special.SpecialRoom;
+import com.shatteredpixel.shatteredpixeldungeon.world.WorldMap;
+import com.shatteredpixel.shatteredpixeldungeon.world.WorldManager;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.ui.QuickSlotButton;
@@ -192,6 +194,10 @@ public class Dungeon {
 	// 1 is for quest sub-floors
 	public static int branch;
 
+	// World exploration system
+	public static WorldMap worldMap;
+	public static boolean worldExplorationEnabled = false;
+
 	//keeps track of what levels the game should try to load instead of creating fresh
 	public static ArrayList<Integer> generatedLevels = new ArrayList<>();
 
@@ -263,6 +269,13 @@ public class Dungeon {
 		branch = 0;
 		generatedLevels.clear();
 
+		// Initialize world exploration system
+		worldExplorationEnabled = true; // Set to true to enable world exploration
+		if (worldExplorationEnabled) {
+			WorldManager.initialize();
+			worldMap = WorldManager.getWorldMap();
+		}
+
 		gold = 0;
 		energy = 0;
 
@@ -298,6 +311,56 @@ public class Dungeon {
 		Dungeon.level = null;
 		Actor.clear();
 		
+		Level level;
+		
+		// Check if world exploration is enabled
+		if (worldExplorationEnabled && worldMap != null) {
+			// Use world exploration system
+			int currentLocationId = worldMap.getCurrentLocationId();
+			level = WorldManager.createLevelForLocation(currentLocationId);
+			
+			if (level == null) {
+				// Fallback to traditional system if world level creation fails
+				level = createTraditionalLevel();
+			} else {
+				// Mark location as discovered
+				worldMap.markLocationDiscovered(currentLocationId);
+			}
+		} else {
+			// Use traditional depth-based system
+			level = createTraditionalLevel();
+		}
+
+		//dead end levels get cleared, don't count as generated
+		if (!(level instanceof DeadEndLevel)){
+			//this assumes that we will never have a depth value outside the range 0 to 999
+			// or -500 to 499, etc.
+			if (!generatedLevels.contains(depth + 1000*branch)) {
+				generatedLevels.add(depth + 1000 * branch);
+			}
+
+			if (depth > Statistics.deepestFloor && branch == 0) {
+				Statistics.deepestFloor = depth;
+
+				if (Statistics.qualifiedForNoKilling) {
+					Statistics.completedWithNoKilling = true;
+				} else {
+					Statistics.completedWithNoKilling = false;
+				}
+			}
+		}
+
+		Statistics.qualifiedForBossRemainsBadge = false;
+		
+		level.create();
+		
+		if (branch == 0) Statistics.qualifiedForNoKilling = !bossLevel();
+		Statistics.qualifiedForBossChallengeBadge = false;
+		
+		return level;
+	}
+	
+	private static Level createTraditionalLevel() {
 		Level level;
 		if (branch == 0) {
 			switch (depth) {
@@ -366,33 +429,6 @@ public class Dungeon {
 		} else {
 			level = new DeadEndLevel();
 		}
-
-		//dead end levels get cleared, don't count as generated
-		if (!(level instanceof DeadEndLevel)){
-			//this assumes that we will never have a depth value outside the range 0 to 999
-			// or -500 to 499, etc.
-			if (!generatedLevels.contains(depth + 1000*branch)) {
-				generatedLevels.add(depth + 1000 * branch);
-			}
-
-			if (depth > Statistics.deepestFloor && branch == 0) {
-				Statistics.deepestFloor = depth;
-
-				if (Statistics.qualifiedForNoKilling) {
-					Statistics.completedWithNoKilling = true;
-				} else {
-					Statistics.completedWithNoKilling = false;
-				}
-			}
-		}
-
-		Statistics.qualifiedForBossRemainsBadge = false;
-		
-		level.create();
-		
-		if (branch == 0) Statistics.qualifiedForNoKilling = !bossLevel();
-		Statistics.qualifiedForBossChallengeBadge = false;
-		
 		return level;
 	}
 	
@@ -459,13 +495,24 @@ public class Dungeon {
 		//Position of -2 specifically means trying to place the hero the exit
 		if (pos == -2){
 			LevelTransition t = level.getTransition(LevelTransition.Type.REGULAR_EXIT);
-			if (t != null) pos = t.cell();
+			if (t != null) {
+				pos = t.cell();
+			} else {
+				// For world exploration levels, find a valid position
+				pos = findValidHeroPosition(level);
+			}
 		}
 
 		//Place hero at the entrance if they are out of the map (often used for pos = -1)
 		// or if they are in invalid terrain terrain (except in the mining level, where that happens normally)
 		if (pos < 0 || pos >= level.length() || level.invalidHeroPos(pos)){
-			pos = level.getTransition(null).cell();
+			LevelTransition entrance = level.getTransition(null);
+			if (entrance != null) {
+				pos = entrance.cell();
+			} else {
+				// For world exploration levels, find a valid position
+				pos = findValidHeroPosition(level);
+			}
 		}
 		
 		PathFinder.setMapSize(level.width(), level.height());
@@ -508,6 +555,29 @@ public class Dungeon {
 			/*This only catches IO errors. Yes, this means things can go wrong, and they can go wrong catastrophically.
 			But when they do the user will get a nice 'report this issue' dialogue, and I can fix the bug.*/
 		}
+	}
+
+	private static int findValidHeroPosition(Level level) {
+		// Find a valid position for the hero in world exploration levels
+		for (int i = 0; i < level.length(); i++) {
+			if (level.passable[i] && !level.invalidHeroPos(i)) {
+				// Check if there's no mob at this position
+				Char ch = Actor.findChar(i);
+				if (ch == null || ch == hero) {
+					return i;
+				}
+			}
+		}
+		
+		// If no perfect position found, just find any passable position
+		for (int i = 0; i < level.length(); i++) {
+			if (level.passable[i]) {
+				return i;
+			}
+		}
+		
+		// Last resort: return center of the level
+		return level.width() / 2 + (level.height() / 2) * level.width();
 	}
 
 	public static void dropToChasm( Item item ) {
@@ -603,6 +673,8 @@ public class Dungeon {
 	private static final String HERO		= "hero";
 	private static final String DEPTH		= "depth";
 	private static final String BRANCH		= "branch";
+	private static final String WORLD_MAP	= "world_map";
+	private static final String WORLD_EXPLORATION_ENABLED = "world_exploration_enabled";
 	private static final String GENERATED_LEVELS    = "generated_levels";
 	private static final String GOLD		= "gold";
 	private static final String ENERGY		= "energy";
@@ -628,11 +700,16 @@ public class Dungeon {
 			bundle.put( CHALLENGES, challenges );
 			bundle.put( MOBS_TO_CHAMPION, mobsToChampion );
 			bundle.put( HERO, hero );
-			bundle.put( DEPTH, depth );
-			bundle.put( BRANCH, branch );
+					bundle.put( DEPTH, depth );
+		bundle.put( BRANCH, branch );
+		
+		if (worldExplorationEnabled && worldMap != null) {
+			bundle.put( WORLD_MAP, worldMap );
+			bundle.put( WORLD_EXPLORATION_ENABLED, worldExplorationEnabled );
+		}
 
-			bundle.put( GOLD, gold );
-			bundle.put( ENERGY, energy );
+		bundle.put( GOLD, gold );
+		bundle.put( ENERGY, energy );
 
 			for (int d : droppedItems.keyArray()) {
 				bundle.put(Messages.format(DROPPED, d), droppedItems.get(d));
@@ -807,6 +884,14 @@ public class Dungeon {
 		
 		depth = bundle.getInt( DEPTH );
 		branch = bundle.getInt( BRANCH );
+		
+		// Restore world exploration system
+		if (bundle.contains( WORLD_EXPLORATION_ENABLED )) {
+			worldExplorationEnabled = bundle.getBoolean( WORLD_EXPLORATION_ENABLED );
+			if (worldExplorationEnabled && bundle.contains( WORLD_MAP )) {
+				worldMap = (WorldMap) bundle.get( WORLD_MAP );
+			}
+		}
 
 		gold = bundle.getInt( GOLD );
 		energy = bundle.getInt( ENERGY );

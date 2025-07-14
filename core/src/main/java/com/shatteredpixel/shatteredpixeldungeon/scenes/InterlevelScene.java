@@ -40,6 +40,7 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.Chasm;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.special.SpecialRoom;
+import com.shatteredpixel.shatteredpixeldungeon.world.WorldManager;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
 import com.shatteredpixel.shatteredpixeldungeon.ui.GameLog;
 import com.shatteredpixel.shatteredpixeldungeon.ui.IconButton;
@@ -634,18 +635,46 @@ public class InterlevelScene extends PixelScene {
 			Dungeon.saveAll();
 
 			Level level;
-			Dungeon.depth = curTransition.destDepth;
-			Dungeon.branch = curTransition.destBranch;
+			
+			// Check if we're using world exploration
+			if (Dungeon.worldExplorationEnabled && Dungeon.worldMap != null && curTransition != null) {
+				// Handle world transition
+				int targetLocationId = curTransition.destDepth; // Using destDepth to store location ID
+				if (WorldManager.moveToLocation(targetLocationId)) {
+					level = Dungeon.newLevel();
+					LevelTransition destTransition = level.getTransition(curTransition.destType);
+					curTransition = null;
+					Dungeon.switchLevel( level, destTransition != null ? destTransition.cell() : -1 );
+				} else {
+					// Fallback to traditional system
+					Dungeon.depth = curTransition.destDepth;
+					Dungeon.branch = curTransition.destBranch;
 
-			if (Dungeon.levelHasBeenGenerated(Dungeon.depth, Dungeon.branch)) {
-				level = Dungeon.loadLevel( GamesInProgress.curSlot );
+					if (Dungeon.levelHasBeenGenerated(Dungeon.depth, Dungeon.branch)) {
+						level = Dungeon.loadLevel( GamesInProgress.curSlot );
+					} else {
+						level = Dungeon.newLevel();
+					}
+
+					LevelTransition destTransition = level.getTransition(curTransition.destType);
+					curTransition = null;
+					Dungeon.switchLevel( level, destTransition.cell() );
+				}
 			} else {
-				level = Dungeon.newLevel();
-			}
+				// Traditional depth-based system
+				Dungeon.depth = curTransition.destDepth;
+				Dungeon.branch = curTransition.destBranch;
 
-			LevelTransition destTransition = level.getTransition(curTransition.destType);
-			curTransition = null;
-			Dungeon.switchLevel( level, destTransition.cell() );
+				if (Dungeon.levelHasBeenGenerated(Dungeon.depth, Dungeon.branch)) {
+					level = Dungeon.loadLevel( GamesInProgress.curSlot );
+				} else {
+					level = Dungeon.newLevel();
+				}
+
+				LevelTransition destTransition = level.getTransition(curTransition.destType);
+				curTransition = null;
+				Dungeon.switchLevel( level, destTransition.cell() );
+			}
 		}
 
 	}
@@ -673,18 +702,46 @@ public class InterlevelScene extends PixelScene {
 		Dungeon.saveAll();
 
 		Level level;
-		Dungeon.depth = curTransition.destDepth;
-		Dungeon.branch = curTransition.destBranch;
+		
+		// Check if we're using world exploration
+		if (Dungeon.worldExplorationEnabled && Dungeon.worldMap != null && curTransition != null) {
+			// Handle world transition
+			int targetLocationId = curTransition.destDepth; // Using destDepth to store location ID
+			if (WorldManager.moveToLocation(targetLocationId)) {
+				level = Dungeon.newLevel();
+				LevelTransition destTransition = level.getTransition(curTransition.destType);
+				curTransition = null;
+				Dungeon.switchLevel( level, destTransition != null ? destTransition.cell() : -1 );
+			} else {
+				// Fallback to traditional system
+				Dungeon.depth = curTransition.destDepth;
+				Dungeon.branch = curTransition.destBranch;
 
-		if (Dungeon.levelHasBeenGenerated(Dungeon.depth, Dungeon.branch)) {
-			level = Dungeon.loadLevel( GamesInProgress.curSlot );
+				if (Dungeon.levelHasBeenGenerated(Dungeon.depth, Dungeon.branch)) {
+					level = Dungeon.loadLevel( GamesInProgress.curSlot );
+				} else {
+					level = Dungeon.newLevel();
+				}
+
+				LevelTransition destTransition = level.getTransition(curTransition.destType);
+				curTransition = null;
+				Dungeon.switchLevel( level, destTransition.cell() );
+			}
 		} else {
-			level = Dungeon.newLevel();
-		}
+			// Traditional depth-based system
+			Dungeon.depth = curTransition.destDepth;
+			Dungeon.branch = curTransition.destBranch;
 
-		LevelTransition destTransition = level.getTransition(curTransition.destType);
-		curTransition = null;
-		Dungeon.switchLevel( level, destTransition.cell() );
+			if (Dungeon.levelHasBeenGenerated(Dungeon.depth, Dungeon.branch)) {
+				level = Dungeon.loadLevel( GamesInProgress.curSlot );
+			} else {
+				level = Dungeon.newLevel();
+			}
+
+			LevelTransition destTransition = level.getTransition(curTransition.destType);
+			curTransition = null;
+			Dungeon.switchLevel( level, destTransition.cell() );
+		}
 	}
 	
 	private void returnTo() throws IOException {

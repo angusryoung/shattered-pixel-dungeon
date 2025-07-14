@@ -97,6 +97,18 @@ public class WndGame extends Window {
 			curBtn.icon(Icons.get(Icons.RANKINGS));
 		}
 
+		// World Map (debug)
+		if (Dungeon.worldExplorationEnabled) {
+			addButton(curBtn = new RedButton("World Map") {
+				@Override
+				protected void onClick() {
+					hide();
+					GameScene.show(new WndWorldMap());
+				}
+			});
+			curBtn.icon(Icons.get(Icons.DISPLAY));
+		}
+
 		// Main menu
 		addButton(curBtn = new RedButton(Messages.get(this, "menu")) {
 			@Override
